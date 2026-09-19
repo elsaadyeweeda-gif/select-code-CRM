@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 12 78 82" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Royal Blue Gradients -->
+    <linearGradient id="sc-blue-top" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+    <linearGradient id="sc-blue-front" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1D4ED8" />
+    </linearGradient>
+    <linearGradient id="sc-blue-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E40AF" />
+      <stop offset="100%" stop-color="#172554" />
+    </linearGradient>
+
+    <!-- Emerald Green Gradients -->
+    <linearGradient id="sc-green-top" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="sc-green-front" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="sc-green-shadow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#064E3B" />
+    </linearGradient>
+
+    <!-- Subtle Ambient Glow -->
+    <filter id="sc-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#059669" flood-opacity="0.18" />
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#2563EB" flood-opacity="0.22" />
+    </filter>
+  </defs>
+
+  <g filter="url(#sc-glow)">
+    <!-- UPPER CHEVRON RIBBON: ROYAL BLUE (Top portion of S) -->
+    <!-- Facet 1: Top Angled Surface -->
+    <path d="M60 14L86 29L64 42L38 27L60 14Z" fill="url(#sc-blue-top)" />
+    <!-- Facet 2: Front Vertical Drop -->
+    <path d="M38 27L64 42V56L38 41V27Z" fill="url(#sc-blue-front)" />
+    <!-- Facet 3: Right Isometric Side -->
+    <path d="M64 42L86 29V43L64 56V42Z" fill="url(#sc-blue-shadow)" />
+    <!-- Left Inward Fold -->
+    <path d="M38 41L22 32L38 23V41Z" fill="#1D4ED8" />
+
+    <!-- LOWER CHEVRON RIBBON: EMERALD GREEN (Bottom portion of S) -->
+    <!-- Facet 1: Top Angled Surface -->
+    <path d="M34 64L56 51L82 66L60 79L34 64Z" fill="url(#sc-green-top)" />
+    <!-- Facet 2: Front Left Face -->
+    <path d="M34 64L60 79V93L34 78V64Z" fill="url(#sc-green-front)" />
+    <!-- Facet 3: Right Drop Shadow Side -->
+    <path d="M60 79L82 66V80L60 93V79Z" fill="url(#sc-green-shadow)" />
+    <!-- Bottom Hook -->
+    <path d="M82 80L98 71V62L82 71V80Z" fill="#059669" />
+  </g>
+</svg>

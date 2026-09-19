@@ -1,0 +1,333 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Account",
+      "description": "User account for dashboard access with RBAC",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user ID" },
+        "username": { "type": "string", "description": "Unique username" },
+        "passwordHash": { "type": "string", "description": "Password pbkdf2 hash" },
+        "salt": { "type": "string", "description": "Hash security salt" },
+        "role": { "type": "string", "enum": ["Admin", "Manager", "User"], "description": "RBAC user role" },
+        "assignedReps": { "type": "array", "description": "Sales representative names assigned to this user" },
+        "permissions": { "type": "array", "description": "Granular user permissions list" },
+        "isActive": { "type": "boolean", "description": "Whether user account is active" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "User creation time" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "User last update time" }
+      },
+      "required": ["id", "username", "passwordHash", "salt", "role", "assignedReps", "isActive", "createdAt", "updatedAt"]
+    },
+    "SalesRep": {
+      "title": "Sales Representative",
+      "description": "Information about a sales representative",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Official representative name" },
+        "email": { "type": "string", "format": "email", "description": "Rep contact email" },
+        "visitsCount": { "type": "integer" }
+      },
+      "required": ["id", "name"]
+    },
+    "ActivityLog": {
+      "title": "Activity / Audit Log",
+      "description": "System audit and activity log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "username": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "username", "action", "details"]
+    },
+    "Visit": {
+      "title": "Visit Log",
+      "description": "Historical sales visit record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "repId": { "type": "string" },
+        "repName": { "type": "string" },
+        "visitSource": { "type": "string" },
+        "visitType": { "type": "string" },
+        "customerName": { "type": "string" },
+        "activityType": { "type": "string" },
+        "requestedProduct": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "province": { "type": "string" },
+        "summary": { "type": "string" },
+        "needs": { "type": "string" },
+        "interestLevel": { "type": "string" },
+        "followUpNotes": { "type": "string" },
+        "followUpResult": { "type": "string" },
+        "nextStep": { "type": "string" },
+        "nextFollowUpDate": { "type": "string" },
+        "customerStatus": { "type": "string" },
+        "expectedOpportunityValue": { "type": "number" },
+        "attachmentUrl": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "isSubmitted": { "type": "boolean" }
+      },
+      "required": ["id", "timestamp", "repId", "repName", "visitType", "customerName", "customerStatus", "expectedOpportunityValue"]
+    },
+    "Customer": {
+      "title": "Customer Record",
+      "description": "Consolidated customer profile details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "repName": { "type": "string" },
+        "repId": { "type": "string" },
+        "activity": { "type": "string" },
+        "requestedProduct": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "province": { "type": "string" },
+        "firstVisitDate": { "type": "string" },
+        "lastVisitDate": { "type": "string" },
+        "visitsCount": { "type": "integer" },
+        "currentStatus": { "type": "string" },
+        "opportunityValue": { "type": "number" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" }
+      },
+      "required": ["id", "name", "activity", "contactPerson", "phone", "email", "address", "province", "firstVisitDate", "lastVisitDate", "visitsCount", "currentStatus", "opportunityValue"]
+    },
+    "SupportTask": {
+      "title": "Support Task",
+      "description": "Technical support task details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "assignedEmployeeId": { "type": "string" },
+        "assignedEmployeeName": { "type": "string" },
+        "taskType": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "assignedAt": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "demoDate": { "type": "string" },
+        "demoTime": { "type": "string" },
+        "demoNotes": { "type": "string" },
+        "demoObjective": { "type": "string" },
+        "trialStartDate": { "type": "string" },
+        "trialExpirationDate": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "assignedEmployeeId", "assignedEmployeeName", "taskType", "priority", "status", "createdAt", "createdBy", "updatedAt"]
+    },
+    "SupportNote": {
+      "title": "Support Note",
+      "description": "Technical support task comments and notes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "note": { "type": "string" },
+        "author": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "taskId", "note", "author", "timestamp"]
+    },
+    "SupportStatusHistory": {
+      "title": "Support Status History",
+      "description": "Status change logs for technical support tasks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "fromStatus": { "type": "string" },
+        "toStatus": { "type": "string" },
+        "changedBy": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "taskId", "fromStatus", "toStatus", "changedBy", "timestamp"]
+    },
+    "TrialInstallation": {
+      "title": "Trial Installation",
+      "description": "Information regarding installed software trial periods",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "taskId": { "type": "string" },
+        "startDate": { "type": "string" },
+        "expirationDate": { "type": "string" },
+        "status": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "taskId", "startDate", "expirationDate", "status", "createdBy", "createdAt"]
+    },
+    "MonitoringRecord": {
+      "title": "Monitoring Record",
+      "description": "Customer follow-up and monitoring department contact logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "callResult": { "type": "string" },
+        "customerSatisfactionLevel": { "type": "integer" },
+        "issuesReported": { "type": "string" },
+        "recommendations": { "type": "string" },
+        "nextFollowUpDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "customerId", "customerName", "employeeId", "employeeName", "callResult", "customerSatisfactionLevel", "status", "createdAt", "createdBy"]
+    },
+    "MonitoringStatusHistory": {
+      "title": "Monitoring Status History",
+      "description": "Historical status logs for customer monitoring records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "fromStatus": { "type": "string" },
+        "toStatus": { "type": "string" },
+        "changedBy": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "customerId", "fromStatus", "toStatus", "changedBy", "timestamp"]
+    },
+    "CRMNotification": {
+      "title": "CRM Notification",
+      "description": "Centralized alerts and system notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "recipientRole": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "relatedId": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "message", "recipientId", "isRead", "createdAt"]
+    },
+    "MonitoringRepTask": {
+      "title": "Monitoring Sales Rep Task",
+      "description": "Tasks assigned to sales representatives by the monitoring & quality department",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "repName": { "type": "string" },
+        "taskType": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "repFeedback": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["id", "customerName", "repName", "title", "status", "createdAt", "createdBy"]
+    },
+    "SystemSettings": {
+      "title": "System Settings",
+      "description": "Global company and application branding settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID, e.g. company-profile" },
+        "companyName": { "type": "string", "description": "Display name of company", "maxLength": 100 },
+        "companyLogo": { "type": "string", "description": "Optimized logo data URL or asset path", "maxLength": 524288 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "settings": {
+      "schema": "SystemSettings",
+      "description": "Global company settings and branding configurations"
+    },
+    "users": {
+      "schema": "User",
+      "description": "RBAC user accounts collection"
+    },
+    "salesReps": {
+      "schema": "SalesRep",
+      "description": "Sales representatives metadata collection"
+    },
+    "logs": {
+      "schema": "ActivityLog",
+      "description": "System activity/audit trail logs"
+    },
+    "visits": {
+      "schema": "Visit",
+      "description": "Sales reps client visit logs"
+    },
+    "customers": {
+      "schema": "Customer",
+      "description": "Customer accounts and contacts"
+    },
+    "support_tasks": {
+      "schema": "SupportTask",
+      "description": "Technical support department tasks"
+    },
+    "support_notes": {
+      "schema": "SupportNote",
+      "description": "Comments and visit/installation reports on support tasks"
+    },
+    "support_status_history": {
+      "schema": "SupportStatusHistory",
+      "description": "Audit trail of support task state transitions"
+    },
+    "trial_installations": {
+      "schema": "TrialInstallation",
+      "description": "Durable active and expired software trials"
+    },
+    "monitoring_records": {
+      "schema": "MonitoringRecord",
+      "description": "Customer monitoring and quality control activities"
+    },
+    "monitoring_status_history": {
+      "schema": "MonitoringStatusHistory",
+      "description": "Status change logs for customer monitoring"
+    },
+    "notifications": {
+      "schema": "CRMNotification",
+      "description": "Central notification center alerts"
+    },
+    "monitoring_rep_tasks": {
+      "schema": "MonitoringRepTask",
+      "description": "Sales representative tasks assigned by Monitoring and Quality department"
+    }
+  }
+}

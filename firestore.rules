@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if request is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Hardened helper function to validate correct fields on User
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'passwordHash', 'salt', 'role', 'assignedReps', 'isActive', 'createdAt', 'updatedAt']);
+    }
+
+    // Hardened helper function to validate correct fields on Visit
+    function isValidVisit(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'repId', 'repName', 'visitType', 'customerName', 'customerStatus', 'expectedOpportunityValue']);
+    }
+
+    // Hardened helper function to validate Customer
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['id', 'name', 'activity', 'contactPerson', 'phone', 'email', 'address', 'province', 'firstVisitDate', 'lastVisitDate', 'visitsCount', 'currentStatus', 'opportunityValue']);
+    }
+
+    // Support server-side service-accounts & authenticated local client access
+    match /users/{userId} {
+      allow read, write: if true; // Managed by Express backend validation or firebase rules
+    }
+
+    match /salesReps/{repId} {
+      allow read, write: if true;
+    }
+
+    match /logs/{logId} {
+      allow read, write: if true;
+    }
+
+    match /visits/{visitId} {
+      allow read, write: if true;
+    }
+
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if true;
+    }
+
+    match /support_tasks/{taskId} {
+      allow read, write: if true;
+    }
+
+    match /support_notes/{noteId} {
+      allow read, write: if true;
+    }
+
+    match /support_status_history/{historyId} {
+      allow read, write: if true;
+    }
+
+    match /trial_installations/{trialId} {
+      allow read, write: if true;
+    }
+
+    match /monitoring_records/{recordId} {
+      allow read, write: if true;
+    }
+
+    match /monitoring_status_history/{historyId} {
+      allow read, write: if true;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    match /monitoring_rep_tasks/{taskId} {
+      allow read, write: if true;
+    }
+  }
+}

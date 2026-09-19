@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="scGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+  </defs>
+  <!-- Background squircle -->
+  <rect width="100" height="100" rx="24" fill="url(#scGrad)" />
+  
+  <!-- Outer glowing brackets symbolizing Code & Selection -->
+  <path d="M30 35 L18 50 L30 65" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" />
+  <path d="M70 35 L82 50 L70 65" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" />
+  
+  <!-- Stylized central 'S' for Select -->
+  <path d="M42 38 C42 34 58 34 58 42 C58 48 42 50 42 58 C42 66 58 66 58 62" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <!-- Selection tick badge -->
+  <circle cx="68" cy="30" r="7" fill="#10b981" />
+  <path d="M65 30 L67 32 L71 28" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

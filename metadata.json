@@ -1,0 +1,8 @@
+{
+  "name": "Sales Visit CRM",
+  "description": "استمارة مبيعات مبسطة لتسجيل زيارات العملاء وحفظها وتصديرها لملفات Excel ومزامنتها تلقائياً مع Google Sheets.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
