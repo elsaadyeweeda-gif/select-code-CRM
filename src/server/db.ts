@@ -832,6 +832,23 @@ export async function saveVisit(visit: Visit): Promise<Visit> {
   return visit;
 }
 
+export async function saveVisitsBatch(visits: Visit[]): Promise<number> {
+  if (!visits || visits.length === 0) return 0;
+  await seedInitialDatabaseIfEmpty();
+  if (isPostgres) {
+    for (const v of visits) {
+      await saveVisit(v);
+    }
+    return visits.length;
+  }
+  const batchSize = 300;
+  for (let i = 0; i < visits.length; i += batchSize) {
+    const chunk = visits.slice(i, i + batchSize);
+    await Promise.all(chunk.map(v => setDoc(doc(db, 'visits', v.id), v)));
+  }
+  return visits.length;
+}
+
 export async function deleteVisit(id: string): Promise<void> {
   await seedInitialDatabaseIfEmpty();
   if (isPostgres) {
@@ -941,6 +958,23 @@ export async function saveCustomer(customer: Customer): Promise<Customer> {
   return customer;
 }
 
+export async function saveCustomersBatch(customers: Customer[]): Promise<number> {
+  if (!customers || customers.length === 0) return 0;
+  await seedInitialDatabaseIfEmpty();
+  if (isPostgres) {
+    for (const c of customers) {
+      await saveCustomer(c);
+    }
+    return customers.length;
+  }
+  const batchSize = 300;
+  for (let i = 0; i < customers.length; i += batchSize) {
+    const chunk = customers.slice(i, i + batchSize);
+    await Promise.all(chunk.map(c => setDoc(doc(db, 'customers', c.id), c)));
+  }
+  return customers.length;
+}
+
 export async function deleteCustomer(id: string): Promise<void> {
   await seedInitialDatabaseIfEmpty();
   if (isPostgres) {
@@ -1037,47 +1071,149 @@ export async function purgeAllCRMData(): Promise<{ customersCount: number; visit
   return { customersCount: custRes.customersCount, visitsCount };
 }
 
+export interface OrphanedCustomersSummary {
+  totalOrphanedCustomers: number;
+  totalOrphanedVisits: number;
+  orphanedReps: {
+    name: string;
+    customerCount: number;
+    visitCount: number;
+    isDeleted: boolean;
+  }[];
+}
+
+export async function getOrphanedSummary(): Promise<OrphanedCustomersSummary> {
+  const [activeReps, customers, visits] = await Promise.all([
+    getSalesReps(),
+    getCustomers(),
+    getVisits()
+  ]);
+
+  const activeRepSet = new Set(activeReps.filter(r => r !== 'الكل' && r !== 'أخرى'));
+  const orphanRepsMap = new Map<string, { customerCount: number; visitCount: number }>();
+
+  let totalOrphanedCustomers = 0;
+  for (const c of customers) {
+    const rep = (c.repName || '').trim();
+    if (!rep || !activeRepSet.has(rep)) {
+      totalOrphanedCustomers++;
+      const key = rep || 'غير محدد (بدون مندوب)';
+      const existing = orphanRepsMap.get(key) || { customerCount: 0, visitCount: 0 };
+      existing.customerCount++;
+      orphanRepsMap.set(key, existing);
+    }
+  }
+
+  let totalOrphanedVisits = 0;
+  for (const v of visits) {
+    const rep = (v.repName || '').trim();
+    if (!rep || !activeRepSet.has(rep)) {
+      totalOrphanedVisits++;
+      const key = rep || 'غير محدد (بدون مندوب)';
+      const existing = orphanRepsMap.get(key) || { customerCount: 0, visitCount: 0 };
+      existing.visitCount++;
+      orphanRepsMap.set(key, existing);
+    }
+  }
+
+  const orphanedReps = Array.from(orphanRepsMap.entries()).map(([name, data]) => ({
+    name,
+    customerCount: data.customerCount,
+    visitCount: data.visitCount,
+    isDeleted: name !== 'غير محدد (بدون مندوب)'
+  }));
+
+  return {
+    totalOrphanedCustomers,
+    totalOrphanedVisits,
+    orphanedReps
+  };
+}
+
 export async function transferCustomers(
   sourceRepName: string,
   targetRepName: string,
   customerIds?: string[],
   updateVisits: boolean = true
 ): Promise<{ transferredCustomersCount: number; updatedVisitsCount: number; transferredCustomerIds: string[] }> {
-  const allCustomers = await getCustomers();
+  const [allCustomers, activeReps] = await Promise.all([
+    getCustomers(),
+    getSalesReps()
+  ]);
+
+  const activeRepSet = new Set(activeReps.filter(r => r !== 'الكل' && r !== 'أخرى'));
+
   const targetCustomers = allCustomers.filter(c => {
     if (customerIds && customerIds.length > 0) {
       return customerIds.includes(c.id);
     }
-    return c.repName === sourceRepName;
+    const currentRep = (c.repName || '').trim();
+    if (sourceRepName === '__ORPHANED__' || sourceRepName === 'جميع العملاء المحذوف مندوبهم') {
+      return !currentRep || !activeRepSet.has(currentRep);
+    }
+    if (sourceRepName === '__UNASSIGNED__' || sourceRepName === 'غير محدد (بدون مندوب)' || sourceRepName === 'غير محدد') {
+      return !currentRep || currentRep === 'غير محدد' || currentRep === 'لم يعين بعد';
+    }
+    return currentRep === sourceRepName.trim();
   });
 
   const transferredCustomerIds: string[] = [];
+  const updatedCustomers: Customer[] = [];
+
   for (const cust of targetCustomers) {
     cust.repName = targetRepName;
-    await saveCustomer(cust);
+    updatedCustomers.push(cust);
     transferredCustomerIds.push(cust.id);
+  }
+
+  // Fast batched concurrent write
+  if (updatedCustomers.length > 0) {
+    await saveCustomersBatch(updatedCustomers);
   }
 
   let updatedVisitsCount = 0;
   if (updateVisits) {
     const allVisits = await getVisits();
+    const custNames = new Set(targetCustomers.map(c => (c.name || '').trim().toLowerCase()));
+    const custIds = new Set(targetCustomers.map(c => c.id));
+
     let visitsToUpdate: Visit[] = [];
 
     if (customerIds && customerIds.length > 0) {
-      const custNames = new Set(targetCustomers.map(c => (c.name || '').trim().toLowerCase()));
       visitsToUpdate = allVisits.filter(v =>
-        (v.repName === sourceRepName) &&
-        custNames.has((v.customerName || '').trim().toLowerCase())
+        (v.customerId && custIds.has(v.customerId)) ||
+        custNames.has((v.customerName || '').trim().toLowerCase()) ||
+        (sourceRepName && sourceRepName !== '__ANY__' && (v.repName || '').trim() === sourceRepName.trim())
+      );
+    } else if (sourceRepName === '__ORPHANED__' || sourceRepName === 'جميع العملاء المحذوف مندوبهم') {
+      visitsToUpdate = allVisits.filter(v =>
+        (v.customerId && custIds.has(v.customerId)) ||
+        custNames.has((v.customerName || '').trim().toLowerCase()) ||
+        (!v.repName || !activeRepSet.has(v.repName.trim()))
+      );
+    } else if (sourceRepName === '__UNASSIGNED__' || sourceRepName === 'غير محدد (بدون مندوب)') {
+      visitsToUpdate = allVisits.filter(v =>
+        (v.customerId && custIds.has(v.customerId)) ||
+        custNames.has((v.customerName || '').trim().toLowerCase()) ||
+        (!v.repName || v.repName.trim() === '' || v.repName === 'غير محدد')
       );
     } else {
-      // Transfer ALL visits belonging to sourceRepName
-      visitsToUpdate = allVisits.filter(v => (v.repName || '').trim() === sourceRepName.trim());
+      // Transfer visits matching the sourceRepName OR belonging to targetCustomers
+      visitsToUpdate = allVisits.filter(v =>
+        (v.repName || '').trim() === sourceRepName.trim() ||
+        (v.customerId && custIds.has(v.customerId)) ||
+        custNames.has((v.customerName || '').trim().toLowerCase())
+      );
     }
 
     for (const v of visitsToUpdate) {
       v.repName = targetRepName;
-      await saveVisit(v);
-      updatedVisitsCount++;
+    }
+
+    // Fast batched concurrent write
+    if (visitsToUpdate.length > 0) {
+      await saveVisitsBatch(visitsToUpdate);
+      updatedVisitsCount = visitsToUpdate.length;
     }
   }
 
