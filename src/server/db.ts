@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import 'dotenv/config';
 import { neon, neonConfig } from '@neondatabase/serverless';
 import crypto from 'crypto';
 import { initializeApp, getApps, getApp } from 'firebase/app';
@@ -20,30 +21,67 @@ import {
   limit, 
   where 
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import rawFirebaseConfig from '../../firebase-applet-config.json';
 
-// Determine Database Engine
-const connectionString = (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_URL_NON_POOLING || '').trim();
+// Determine Database Engine (Supports Vercel Postgres, Neon, Supabase, or Firebase Firestore)
+const connectionString = (
+  process.env.DATABASE_URL || 
+  process.env.POSTGRES_URL || 
+  process.env.POSTGRES_URL_NON_POOLING || 
+  process.env.POSTGRES_PRISMA_URL || 
+  process.env.NEON_DATABASE_URL || 
+  ''
+).trim();
 
 let sql: any = null;
 if (connectionString) {
   try {
     neonConfig.fetchConnectionCache = true;
     sql = neon(connectionString);
-    console.log("Using Neon PostgreSQL database engine.");
+    console.log("Using PostgreSQL / Neon database engine (Vercel / Cloud).");
   } catch (err) {
-    console.error("Failed to initialize Neon PostgreSQL, falling back to Firebase Firestore:", err);
+    console.error("Failed to initialize PostgreSQL connection, falling back to Firebase Firestore:", err);
     sql = null;
   }
 } else {
   console.log("No PostgreSQL connection string provided. Using Firebase Firestore database.");
 }
 
-const isPostgres = !!sql;
+export const isPostgres = !!sql;
 
-// Initialize Firebase Firestore
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+// Resolution of Firebase Configuration (supports Vercel Environment Variables, GitHub Secrets, or local JSON)
+export const firebaseConfig = {
+  projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || rawFirebaseConfig.projectId,
+  appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || rawFirebaseConfig.appId,
+  apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || rawFirebaseConfig.apiKey,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || rawFirebaseConfig.authDomain,
+  firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || rawFirebaseConfig.firestoreDatabaseId || '(default)',
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || rawFirebaseConfig.storageBucket,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || rawFirebaseConfig.messagingSenderId,
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID || rawFirebaseConfig.measurementId || ""
+};
+
+if (process.env.FIREBASE_CONFIG) {
+  try {
+    const parsed = typeof process.env.FIREBASE_CONFIG === 'string'
+      ? JSON.parse(process.env.FIREBASE_CONFIG)
+      : process.env.FIREBASE_CONFIG;
+    Object.assign(firebaseConfig, parsed);
+  } catch (e) {
+    console.warn("Failed to parse FIREBASE_CONFIG environment variable:", e);
+  }
+}
+
+// Initialize Firebase Firestore only when NOT using PostgreSQL
+let db: any = null;
+if (!isPostgres) {
+  try {
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+  } catch (err) {
+    console.error("Failed to initialize Firebase Firestore:", err);
+  }
+}
 
 // ---------------- DATA INTERFACES ----------------
 
@@ -257,193 +295,210 @@ export function generateSalt(): string {
 
 // ---------------- DATABASE INITIALIZATION & SCHEMA ----------------
 let dbInitialized = false;
+let dbInitPromise: Promise<void> | null = null;
 
 export async function seedInitialDatabaseIfEmpty(): Promise<void> {
   if (dbInitialized) return;
+  if (dbInitPromise) return dbInitPromise;
 
-  if (isPostgres) {
-    try {
-      // 1. Create Tables if they do not exist
-      await sql`
-        CREATE TABLE IF NOT EXISTS users (
-          id TEXT PRIMARY KEY,
-          username TEXT UNIQUE NOT NULL,
-          password_hash TEXT NOT NULL,
-          salt TEXT NOT NULL,
-          role TEXT NOT NULL,
-          assigned_reps JSONB DEFAULT '[]'::jsonb,
-          permissions JSONB DEFAULT '[]'::jsonb,
-          is_active BOOLEAN DEFAULT TRUE,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS settings (
-          key TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS logs (
-          id TEXT PRIMARY KEY,
-          timestamp TIMESTAMPTZ DEFAULT NOW(),
-          username TEXT NOT NULL,
-          action TEXT NOT NULL,
-          details TEXT NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS customers (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS visits (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS support_tasks (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS support_notes (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS support_status_history (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS trial_installations (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS monitoring_records (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS monitoring_status_history (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS monitoring_rep_tasks (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      await sql`
-        CREATE TABLE IF NOT EXISTS notifications (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL
-        );
-      `;
-
-      // 2. Check and Seed Admin User in Postgres
-      const existingUsers = await sql`SELECT id FROM users LIMIT 1`;
-      if (existingUsers.length === 0) {
-        const adminSalt = generateSalt();
-        const adminPassHash = hashPassword('555531', adminSalt);
-        const defaultAdmin: UserAccount = {
-          id: 'usr-admin-default',
-          username: 'Elsaady',
-          passwordHash: adminPassHash,
-          salt: adminSalt,
-          role: 'Admin',
-          assignedReps: [],
-          permissions: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-
+  dbInitPromise = (async () => {
+    if (isPostgres && sql) {
+      try {
+        // 1. Create Tables if they do not exist
         await sql`
-          INSERT INTO users (id, username, password_hash, salt, role, assigned_reps, permissions, is_active, created_at, updated_at)
-          VALUES (
-            ${defaultAdmin.id}, 
-            ${defaultAdmin.username}, 
-            ${defaultAdmin.passwordHash}, 
-            ${defaultAdmin.salt}, 
-            ${defaultAdmin.role}, 
-            ${JSON.stringify(defaultAdmin.assignedReps)}, 
-            ${JSON.stringify(defaultAdmin.permissions)}, 
-            ${defaultAdmin.isActive}, 
-            ${defaultAdmin.createdAt}, 
-            ${defaultAdmin.updatedAt}
-          )
+          CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            role TEXT NOT NULL,
+            assigned_reps JSONB DEFAULT '[]'::jsonb,
+            permissions JSONB DEFAULT '[]'::jsonb,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          );
         `;
 
-        // Seed Default Sales Reps
-        const defaultReps = ['حسام عيد', 'مهند', 'احمد زين', 'احمد محمود', 'عبد الرحمن مبروك', 'منار ابراهيم', 'سارة', 'نانسي', 'رنا', 'السعدي عويضة', 'رفيق حفني', 'أخرى'];
         await sql`
-          INSERT INTO settings (key, data) 
-          VALUES ('sales-reps-config', ${JSON.stringify({ list: defaultReps })})
-          ON CONFLICT (key) DO NOTHING
+          CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
         `;
 
-        const initLogId = 'log-' + crypto.randomUUID();
         await sql`
-          INSERT INTO logs (id, timestamp, username, action, details)
-          VALUES (${initLogId}, NOW(), 'System', 'db_initialized', 'تم تهيئة قاعدة بيانات Neon PostgreSQL بنجاح مع حساب Elsaady')
+          CREATE TABLE IF NOT EXISTS logs (
+            id TEXT PRIMARY KEY,
+            timestamp TIMESTAMPTZ DEFAULT NOW(),
+            username TEXT NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT NOT NULL
+          );
         `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS customers (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS visits (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS support_tasks (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS support_notes (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS support_status_history (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS trial_installations (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS monitoring_records (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS monitoring_status_history (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS monitoring_rep_tasks (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        await sql`
+          CREATE TABLE IF NOT EXISTS notifications (
+            id TEXT PRIMARY KEY,
+            data JSONB NOT NULL
+          );
+        `;
+
+        // 2. Check and Seed Admin User in Postgres
+        const existingUsers = await sql`SELECT id FROM users LIMIT 1`;
+        if (existingUsers.length === 0) {
+          const adminSalt = generateSalt();
+          const adminPassHash = hashPassword('555531', adminSalt);
+          const defaultAdmin: UserAccount = {
+            id: 'usr-admin-default',
+            username: 'Elsaady',
+            passwordHash: adminPassHash,
+            salt: adminSalt,
+            role: 'Admin',
+            assignedReps: [],
+            permissions: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+
+          await sql`
+            INSERT INTO users (id, username, password_hash, salt, role, assigned_reps, permissions, is_active, created_at, updated_at)
+            VALUES (
+              ${defaultAdmin.id}, 
+              ${defaultAdmin.username}, 
+              ${defaultAdmin.passwordHash}, 
+              ${defaultAdmin.salt}, 
+              ${defaultAdmin.role}, 
+              ${JSON.stringify(defaultAdmin.assignedReps)}, 
+              ${JSON.stringify(defaultAdmin.permissions)}, 
+              ${defaultAdmin.isActive}, 
+              ${defaultAdmin.createdAt}, 
+              ${defaultAdmin.updatedAt}
+            )
+          `;
+
+          // Seed Default Sales Reps
+          const defaultReps = ['حسام عيد', 'مهند', 'احمد زين', 'احمد محمود', 'عبد الرحمن مبروك', 'منار ابراهيم', 'سارة', 'نانسي', 'رنا', 'السعدي عويضة', 'رفيق حفني', 'أخرى'];
+          await sql`
+            INSERT INTO settings (key, data) 
+            VALUES ('sales-reps-config', ${JSON.stringify({ list: defaultReps })})
+            ON CONFLICT (key) DO NOTHING
+          `;
+
+          const initLogId = 'log-' + crypto.randomUUID();
+          await sql`
+            INSERT INTO logs (id, timestamp, username, action, details)
+            VALUES (${initLogId}, NOW(), 'System', 'db_initialized', 'تم تهيئة قاعدة بيانات Neon PostgreSQL بنجاح مع حساب Elsaady')
+          `;
+        }
+      } catch (err) {
+        console.error("Error initializing PostgreSQL schema:", err);
       }
-    } catch (err) {
-      console.error("Error initializing PostgreSQL schema:", err);
-    }
-  } else {
-    // Firestore seeding if empty
-    try {
-      const snap = await getDocs(query(collection(db, 'users'), limit(1)));
-      if (snap.empty) {
-        const adminSalt = generateSalt();
-        const adminPassHash = hashPassword('555531', adminSalt);
-        const defaultAdmin: UserAccount = {
-          id: 'usr-admin-default',
-          username: 'Elsaady',
-          passwordHash: adminPassHash,
-          salt: adminSalt,
-          role: 'Admin',
-          assignedReps: [],
-          permissions: [],
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        await setDoc(doc(db, 'users', defaultAdmin.id), defaultAdmin);
+    } else if (db) {
+      // Firestore seeding if empty
+      try {
+        const snap = await getDocs(query(collection(db, 'users'), limit(1)));
+        if (snap.empty) {
+          const adminSalt = generateSalt();
+          const adminPassHash = hashPassword('555531', adminSalt);
+          const defaultAdmin: UserAccount = {
+            id: 'usr-admin-default',
+            username: 'Elsaady',
+            passwordHash: adminPassHash,
+            salt: adminSalt,
+            role: 'Admin',
+            assignedReps: [],
+            permissions: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          await setDoc(doc(db, 'users', defaultAdmin.id), defaultAdmin);
+        }
+      } catch (err) {
+        console.error("Error checking Firestore initialization:", err);
       }
-    } catch (err) {
-      console.error("Error checking Firestore initialization:", err);
     }
-  }
 
-  dbInitialized = true;
+    dbInitialized = true;
+  })();
+
+  await dbInitPromise;
+}
+
+export function getDatabaseEngineInfo() {
+  return {
+    engine: isPostgres ? 'postgresql' : 'firestore',
+    isPostgres,
+    isInitialized: dbInitialized,
+    postgresConfigured: !!connectionString,
+    firestoreProjectId: firebaseConfig.projectId,
+    firestoreDatabaseId: firebaseConfig.firestoreDatabaseId
+  };
 }
 
 // ---------------- USER OPERATIONS ----------------

@@ -1,20 +1,24 @@
-// @ts-ignore
-import { createApp } from "../dist/server.cjs";
+let appInstance: any = null;
 
-let appPromise: any = null;
-
-try {
-  appPromise = createApp();
-} catch (initErr: any) {
-  console.error("Failed to initialize express app:", initErr);
+async function getApp() {
+  if (!appInstance) {
+    try {
+      // Attempt loading from compiled distribution bundle
+      // @ts-ignore
+      const mod = await import("../dist/server.cjs");
+      appInstance = await mod.createApp();
+    } catch (bundleErr) {
+      // Fallback: direct import from server source (standard in Vercel Serverless TypeScript)
+      const mod = await import("../server");
+      appInstance = await mod.createApp();
+    }
+  }
+  return appInstance;
 }
 
 export default async function handler(req: any, res: any) {
   try {
-    if (!appPromise) {
-      throw new Error("createApp failed to run during initial loading phase");
-    }
-    const app = await appPromise;
+    const app = await getApp();
     return app(req, res);
   } catch (err: any) {
     console.error("Vercel Serverless Function Crash:", err);

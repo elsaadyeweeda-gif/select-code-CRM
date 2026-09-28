@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import 'dotenv/config';
 import express from "express";
 import path from "path";
 import crypto from "crypto";
@@ -16,6 +17,7 @@ import {
   toggleUserStatus, 
   hashPassword,
   generateSalt,
+  getDatabaseEngineInfo,
   getSalesReps,
   saveSalesReps,
   getVisits,
@@ -1741,6 +1743,21 @@ export async function createApp() {
     res.json({ status: "ok" });
   });
 
+  // Database status and diagnostics endpoint (useful for Vercel / GitHub deployments)
+  app.get("/api/db/status", (req, res) => {
+    try {
+      const dbInfo = getDatabaseEngineInfo();
+      res.json({
+        status: "ok",
+        database: dbInfo,
+        serverless: !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME),
+        environment: process.env.NODE_ENV || 'production'
+      });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
   return app;
 }
 
@@ -1771,7 +1788,19 @@ export async function startServer() {
 
 // Only start the standalone HTTP server if we are executed directly as the entry point
 // and not imported as a serverless function module (e.g. on Vercel, Netlify, Cloud Functions or other lambda engines)
-const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.FUNCTIONS_SIGNATURE_TYPE;
-if (!isServerless) {
+const isServerless = !!(
+  process.env.VERCEL || 
+  process.env.AWS_LAMBDA_FUNCTION_NAME || 
+  process.env.NETLIFY || 
+  process.env.FUNCTIONS_SIGNATURE_TYPE
+);
+
+const isMainEntry = typeof process !== 'undefined' && process.argv && process.argv[1] && (
+  process.argv[1].endsWith('server.ts') || 
+  process.argv[1].endsWith('server.cjs') || 
+  process.argv[1].endsWith('server.js')
+);
+
+if (!isServerless && isMainEntry) {
   startServer();
 }
