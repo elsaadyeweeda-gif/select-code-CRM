@@ -25,6 +25,7 @@ import {
 import { Customer, Visit } from '../types';
 import TransferCustomersModal from './TransferCustomersModal';
 import AdminLogoModal from './AdminLogoModal';
+import { DataPurgeManager } from './DataPurgeManager';
 
 interface User {
   id: string;
@@ -104,6 +105,7 @@ interface AdminRBACPanelProps {
   onTransferSuccess?: (result: any) => void;
   companyLogo?: string;
   onUpdateLogo?: (newLogo: string) => void;
+  onDataPurged?: () => void;
 }
 
 export function AdminRBACPanel({ 
@@ -119,7 +121,8 @@ export function AdminRBACPanel({
   visits = [],
   onTransferSuccess,
   companyLogo = '/path-to-logo.png',
-  onUpdateLogo
+  onUpdateLogo,
+  onDataPurged
 }: AdminRBACPanelProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -218,8 +221,8 @@ export function AdminRBACPanel({
     .filter(name => name !== 'الكل' && name !== 'أخرى')
     .filter(name => !repSearchQuery.trim() || name.toLowerCase().includes(repSearchQuery.trim().toLowerCase()));
 
-  // Sub-tabs: 'users' | 'logs' | 'recycle_bin'
-  const [rbacSubTab, setRbacSubTab] = useState<'users' | 'logs' | 'recycle_bin'>('users');
+  // Sub-tabs: 'users' | 'logs' | 'recycle_bin' | 'data_cleanup'
+  const [rbacSubTab, setRbacSubTab] = useState<'users' | 'logs' | 'recycle_bin' | 'data_cleanup'>('users');
 
   // Default dynamic permissions map for roles
   const DEFAULT_ROLE_PERMISSIONS: Record<'Admin' | 'Manager' | 'User' | 'TechnicalSupport' | 'Monitoring', string[]> = {
@@ -576,6 +579,17 @@ export function AdminRBACPanel({
           >
             <span className="text-sm">♻️</span>
             <span>سلة المحذوفات ({softDeletedVisits.length})</span>
+          </button>
+          <button
+            onClick={() => setRbacSubTab('data_cleanup')}
+            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all ${
+              rbacSubTab === 'data_cleanup'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
+                : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-100'
+            }`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>إدارة وتطهير البيانات</span>
           </button>
         </div>
       </div>
@@ -1117,6 +1131,17 @@ export function AdminRBACPanel({
             </div>
 
           </div>
+        )}
+
+        {rbacSubTab === 'data_cleanup' && (
+          <DataPurgeManager
+            visits={visits}
+            customers={customers}
+            salesRepsList={salesRepsList}
+            currentUser={currentUser}
+            triggerMessage={triggerMessage}
+            onDataPurged={onDataPurged}
+          />
         )}
       </div>
 

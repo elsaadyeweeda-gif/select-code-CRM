@@ -23,9 +23,16 @@ import {
   getVisits,
   saveVisit,
   deleteVisit,
+  deleteAllVisits,
+  deleteVisitsByIds,
+  deleteVisitsByFilter,
   getCustomers,
   saveCustomer,
   deleteCustomer,
+  deleteAllCustomers,
+  deleteCustomersByIds,
+  deleteCustomersByFilter,
+  purgeAllCRMData,
   transferCustomers,
   getSystemSettings,
   saveSystemSettings,
@@ -681,6 +688,37 @@ export async function createApp() {
     }
   });
 
+  // Admin: Delete all visits (Complete Wipe)
+  app.delete("/api/admin/visits/all", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    try {
+      const count = await deleteAllVisits();
+      await addLog(req.user.username, "visits_wipe_all", `حذف كلي لكافة سجلات الزيارات (العدد: ${count})`);
+      return res.json({ status: "success", deletedCount: count });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
+  // Admin: Bulk delete visits by IDs or filter
+  app.post("/api/admin/visits/delete-bulk", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    const { ids, filters } = req.body || {};
+    try {
+      let count = 0;
+      if (Array.isArray(ids) && ids.length > 0) {
+        count = await deleteVisitsByIds(ids);
+        await addLog(req.user.username, "visits_bulk_delete", `حذف جماعي لزيارات محددة (العدد: ${count})`);
+      } else if (filters && typeof filters === 'object') {
+        count = await deleteVisitsByFilter(filters);
+        await addLog(req.user.username, "visits_filtered_delete", `حذف جماعي لزيارات مفلترة (العدد: ${count})`);
+      } else {
+        return res.status(400).json({ status: "error", error: "يجب تحديد قائمة المعرفات أو فلاتر التصفية للحذف" });
+      }
+      return res.json({ status: "success", deletedCount: count });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
   // Manual Follow-up Reminder Dismissal API
   app.post("/api/visits/:id/dismiss-reminder", authenticateToken, async (req: any, res: any) => {
     const { id } = req.params;
@@ -814,6 +852,77 @@ export async function createApp() {
     try {
       await deleteCustomer(id);
       return res.json({ status: "success" });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
+  // Admin: Delete all customers (Complete Wipe)
+  app.delete("/api/admin/customers/all", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    const deleteVisits = req.query.deleteAssociatedVisits === 'true' || req.query.includeVisits === 'true';
+    try {
+      const result = await deleteAllCustomers(deleteVisits);
+      await addLog(req.user.username, "customers_wipe_all", `حذف كلي لكافة سجلات العملاء (العدد: ${result.customersCount})${deleteVisits ? ` مع حذف زياراتهم التابعة (${result.visitsCount})` : ''}`);
+      return res.json({ status: "success", result });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
+  // Admin: Bulk delete customers by IDs or filter
+  app.post("/api/admin/customers/delete-bulk", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    const { ids, filters, deleteAssociatedVisits = false } = req.body || {};
+    try {
+      let result = { customersCount: 0, visitsCount: 0 };
+      if (Array.isArray(ids) && ids.length > 0) {
+        result = await deleteCustomersByIds(ids, deleteAssociatedVisits);
+        await addLog(req.user.username, "customers_bulk_delete", `حذف جماعي لعملاء محددين (العدد: ${result.customersCount})${deleteAssociatedVisits ? ` وحذف زياراتهم (${result.visitsCount})` : ''}`);
+      } else if (filters && typeof filters === 'object') {
+        result = await deleteCustomersByFilter(filters, deleteAssociatedVisits);
+        await addLog(req.user.username, "customers_filtered_delete", `حذف جماعي لعملاء مفلترين (العدد: ${result.customersCount})${deleteAssociatedVisits ? ` وحذف زياراتهم (${result.visitsCount})` : ''}`);
+      } else {
+        return res.status(400).json({ status: "error", error: "يجب تحديد قائمة المعرفات أو فلاتر التصفية للحذف" });
+      }
+      return res.json({ status: "success", result });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
+  // Admin: Unified Data Purge (Complete or Partial cleanup for Admin Panel)
+  app.post("/api/admin/data/purge", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    const { action, ids, filters, deleteAssociatedVisits } = req.body || {};
+    try {
+      let result: any = { customersCount: 0, visitsCount: 0 };
+      if (action === 'wipe_all') {
+        result = await purgeAllCRMData();
+        await addLog(req.user.username, "data_purge_all", `تطهير ومسح كلي شامل لكافة الزيارات (${result.visitsCount}) والعملاء (${result.customersCount})`);
+      } else if (action === 'wipe_visits') {
+        const count = await deleteAllVisits();
+        result.visitsCount = count;
+        await addLog(req.user.username, "visits_wipe_all", `مسح كلي لكافة سجلات الزيارات (العدد: ${count})`);
+      } else if (action === 'wipe_customers') {
+        result = await deleteAllCustomers(!!deleteAssociatedVisits);
+        await addLog(req.user.username, "customers_wipe_all", `مسح كلي لكافة سجلات العملاء (العدد: ${result.customersCount})`);
+      } else if (action === 'delete_visits_selected') {
+        const count = await deleteVisitsByIds(ids || []);
+        result.visitsCount = count;
+        await addLog(req.user.username, "visits_selected_delete", `حذف جزئي للزيارات المحددة (العدد: ${count})`);
+      } else if (action === 'delete_customers_selected') {
+        result = await deleteCustomersByIds(ids || [], !!deleteAssociatedVisits);
+        await addLog(req.user.username, "customers_selected_delete", `حذف جزئي للعملاء المحددين (العدد: ${result.customersCount})`);
+      } else if (action === 'delete_visits_filtered') {
+        const count = await deleteVisitsByFilter(filters || {});
+        result.visitsCount = count;
+        await addLog(req.user.username, "visits_filtered_delete", `حذف جزئي للزيارات حسب الفلترة (العدد: ${count})`);
+      } else if (action === 'delete_customers_filtered') {
+        result = await deleteCustomersByFilter(filters || {}, !!deleteAssociatedVisits);
+        await addLog(req.user.username, "customers_filtered_delete", `حذف جزئي للعملاء حسب الفلترة (العدد: ${result.customersCount})`);
+      } else {
+        return res.status(400).json({ status: "error", error: "إجراء الحذف المطلوب غير صالح" });
+      }
+
+      return res.json({ status: "success", result });
     } catch (err: any) {
       return res.status(500).json({ status: "error", error: err.message });
     }

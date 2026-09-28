@@ -530,6 +530,11 @@ export default function App() {
   const [dismissReasonInput, setDismissReasonInput] = useState<string>('');
   const [dismissSubmitting, setDismissSubmitting] = useState<boolean>(false);
 
+  // Batch Deletion States for Visits Table
+  const [selectedVisitIds, setSelectedVisitIds] = useState<string[]>([]);
+  const [isBulkDeletingVisits, setIsBulkDeletingVisits] = useState<boolean>(false);
+  const [showBulkDeleteVisitsModal, setShowBulkDeleteVisitsModal] = useState<boolean>(false);
+
   // Monitoring Sales Rep Tasks States
   const [monitoringRepTasks, setMonitoringRepTasks] = useState<MonitoringRepTask[]>([]);
   const [loadingRepTasks, setLoadingRepTasks] = useState<boolean>(false);
@@ -996,6 +1001,83 @@ export default function App() {
         return updated;
       });
       triggerMessage('success', 'تمت إعادة تفعيل تذكير المتابعة بنجاح!');
+    }
+  };
+
+  // Refresh visits and customers from cloud database
+  const refreshDatabaseState = async () => {
+    const token = localStorage.getItem('sales_visit_crm_auth_token');
+    if (!token) return;
+    try {
+      const vRes = await fetch('/api/visits', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const vData = await vRes.json();
+      if (vData.status === 'success' && vData.visits) {
+        setRawVisits(vData.visits);
+        setStoredData('visits', vData.visits);
+      }
+
+      const cRes = await fetch('/api/customers', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const cData = await cRes.json();
+      if (cData.status === 'success' && cData.customers) {
+        setRawCustomers(cData.customers);
+        setStoredData('customers', cData.customers);
+      }
+    } catch (e) {
+      console.error("Failed to refresh database state:", e);
+    }
+  };
+
+  // Admin bulk deletion handler for visits
+  const handleBulkDeleteVisits = async (ids: string[]) => {
+    const token = localStorage.getItem('sales_visit_crm_auth_token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/visits/delete-bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        triggerMessage('success', `تم حذف (${ids.length}) زيارة بنجاح`);
+        await refreshDatabaseState();
+      } else {
+        triggerMessage('error', data.error || 'فشل حذف الزيارات المحددة');
+      }
+    } catch (e: any) {
+      triggerMessage('error', 'حدث خطأ في الاتصال: ' + e.message);
+    }
+  };
+
+  // Admin bulk deletion handler for customers
+  const handleBulkDeleteCustomers = async (ids: string[], deleteAssociatedVisits: boolean) => {
+    const token = localStorage.getItem('sales_visit_crm_auth_token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/admin/customers/delete-bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ ids, deleteAssociatedVisits })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        triggerMessage('success', `تم حذف (${ids.length}) عميل بنجاح`);
+        await refreshDatabaseState();
+      } else {
+        triggerMessage('error', data.error || 'فشل حذف العملاء المحددين');
+      }
+    } catch (e: any) {
+      triggerMessage('error', 'حدث خطأ في الاتصال: ' + e.message);
     }
   };
 
@@ -2473,6 +2555,7 @@ export default function App() {
           onTransferSuccess={handleTransferSuccess}
           companyLogo={companyLogo}
           onUpdateLogo={handleUpdateLogo}
+          onDataPurged={refreshDatabaseState}
         />
       ) : activeTab === 'support' ? (
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6 animate-fadeIn">
@@ -4049,28 +4132,92 @@ export default function App() {
               ) : (
                 
                 /* DETAILED CLASSIC TABLE VIEW (RE-STYLED AND HIGHLY POLISHED) */
-                <div className="overflow-x-auto border border-slate-150 rounded-2xl">
-                  <table className="w-full text-right text-xs border-collapse font-sans">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-150 text-slate-500 text-[10px]">
-                        <th className="p-3.5 font-black whitespace-nowrap">رقم الزيارة</th>
-                        <th className="p-3.5 font-black whitespace-nowrap">التاريخ والوقت</th>
-                        <th className="p-3.5 font-black whitespace-nowrap">المندوب</th>
-                        <th className="p-3.5 font-black whitespace-nowrap font-sans text-right">نوع الـزيارة</th>
-                        <th className="p-3.5 font-black whitespace-nowrap">العميل والمؤسسة</th>
-                        <th className="p-3.5 font-black whitespace-nowrap text-center text-center">المنتج والتفاصيل</th>
-                        <th className="p-3.5 font-black whitespace-nowrap font-sans">الهاتف</th>
-                        <th className="p-3.5 font-black whitespace-nowrap">المحافظة</th>
-                        <th className="p-3.5 font-black whitespace-nowrap">وقائع المقابلة الميدانية</th>
-                        <th className="p-3.5 font-black whitespace-nowrap text-right">الفرصة الدورية</th>
-                        <th className="p-3.5 font-black whitespace-nowrap">حالة الصفقة</th>
-                        <th className="p-3.5 font-black whitespace-nowrap text-center">إجراءات التحكم والمساندة</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredVisits.map((v) => (
-                        <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50/55 transition-colors">
-                          <td className="p-3.5 font-black text-slate-500 font-mono whitespace-nowrap">
+                <>
+                  {/* Admin Bulk Visits Action Bar */}
+                  {currentUser?.role === 'Admin' && selectedVisitIds.length > 0 && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 px-4 flex items-center justify-between flex-wrap gap-3 mb-4 animate-fadeIn" dir="rtl">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs bg-rose-600 text-white font-extrabold px-3 py-1 rounded-full">
+                          تم تحديد {selectedVisitIds.length} زيارة
+                        </span>
+                        <span className="text-xs font-bold text-rose-900">
+                          جاهزة للحذف الجماعي لمدير النظام
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedVisitIds([])}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
+                        >
+                          إلغاء التحديد
+                        </button>
+                        <button
+                          onClick={() => setShowBulkDeleteVisitsModal(true)}
+                          className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-xs cursor-pointer flex items-center gap-1.5 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف الزيارات المحددة ({selectedVisitIds.length})</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto border border-slate-150 rounded-2xl">
+                    <table className="w-full text-right text-xs border-collapse font-sans">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-150 text-slate-500 text-[10px]">
+                          {currentUser?.role === 'Admin' && (
+                            <th className="p-3.5 w-10 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedVisitIds.length === filteredVisits.length && filteredVisits.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedVisitIds(filteredVisits.map(v => v.id));
+                                  } else {
+                                    setSelectedVisitIds([]);
+                                  }
+                                }}
+                                className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+                                title="تحديد الكل"
+                              />
+                            </th>
+                          )}
+                          <th className="p-3.5 font-black whitespace-nowrap">رقم الزيارة</th>
+                          <th className="p-3.5 font-black whitespace-nowrap">التاريخ والوقت</th>
+                          <th className="p-3.5 font-black whitespace-nowrap">المندوب</th>
+                          <th className="p-3.5 font-black whitespace-nowrap font-sans text-right">نوع الـزيارة</th>
+                          <th className="p-3.5 font-black whitespace-nowrap">العميل والمؤسسة</th>
+                          <th className="p-3.5 font-black whitespace-nowrap text-center text-center">المنتج والتفاصيل</th>
+                          <th className="p-3.5 font-black whitespace-nowrap font-sans">الهاتف</th>
+                          <th className="p-3.5 font-black whitespace-nowrap">المحافظة</th>
+                          <th className="p-3.5 font-black whitespace-nowrap">وقائع المقابلة الميدانية</th>
+                          <th className="p-3.5 font-black whitespace-nowrap text-right">الفرصة الدورية</th>
+                          <th className="p-3.5 font-black whitespace-nowrap">حالة الصفقة</th>
+                          <th className="p-3.5 font-black whitespace-nowrap text-center">إجراءات التحكم والمساندة</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredVisits.map((v) => (
+                          <tr key={v.id} className={`border-b border-slate-50 hover:bg-slate-50/55 transition-colors ${selectedVisitIds.includes(v.id) ? 'bg-rose-50/30' : ''}`}>
+                            {currentUser?.role === 'Admin' && (
+                              <td className="p-3.5 w-10 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedVisitIds.includes(v.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedVisitIds(prev => [...prev, v.id]);
+                                    } else {
+                                      setSelectedVisitIds(prev => prev.filter(id => id !== v.id));
+                                    }
+                                  }}
+                                  className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+                                />
+                              </td>
+                            )}
+                            <td className="p-3.5 font-black text-slate-500 font-mono whitespace-nowrap">
                             <span 
                               onClick={() => setViewingModalVisit(v)}
                               className="hover:underline cursor-pointer text-teal-700"
@@ -4164,7 +4311,8 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-              )}
+              </>
+            )}
             </div>
           </section>
           ) : (
@@ -4173,6 +4321,7 @@ export default function App() {
               currentUser={currentUser}
               salesRepsList={salesRepsList}
               onTransferCustomer={handleTransferCustomer}
+              onBulkDeleteCustomers={handleBulkDeleteCustomers}
               onNavigateToForm={() => {
                 setActiveTab('register');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4573,6 +4722,73 @@ export default function App() {
           <span>زيارة جديدة 📝</span>
         </button>
       </div>
+
+      {/* Modal for Confirming Bulk Visit Deletion */}
+      {showBulkDeleteVisitsModal && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-100 shadow-2xl text-right animate-scaleUp space-y-4" dir="rtl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-rose-600">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <h3 className="text-sm font-black text-slate-900">تأكيد حذف الزيارات المحددة</h3>
+              </div>
+              <button
+                onClick={() => !isBulkDeletingVisits && setShowBulkDeleteVisitsModal(false)}
+                disabled={isBulkDeletingVisits}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl space-y-1">
+              <p className="text-xs font-black text-rose-900">
+                أنت على وشك حذف ({selectedVisitIds.length}) زيارة ميدانية بشكل نهائي.
+              </p>
+              <p className="text-[11px] text-rose-700 font-bold">
+                هذا الإجراء نهائي ولا يمكن التراجع عنه.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteVisitsModal(false)}
+                disabled={isBulkDeletingVisits}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black cursor-pointer transition-all"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsBulkDeletingVisits(true);
+                  try {
+                    await handleBulkDeleteVisits(selectedVisitIds);
+                    setSelectedVisitIds([]);
+                    setShowBulkDeleteVisitsModal(false);
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setIsBulkDeletingVisits(false);
+                  }
+                }}
+                disabled={isBulkDeletingVisits}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 cursor-pointer transition-all flex items-center justify-center gap-2"
+              >
+                {isBulkDeletingVisits ? (
+                  <span>جاري الحذف...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>تأكيد الحذف ({selectedVisitIds.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

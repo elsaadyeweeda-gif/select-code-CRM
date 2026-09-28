@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Customer, CustomerStatus, SupportTask } from '../types';
-import { Search, MapPin, Building, Phone, Calendar, ArrowUpRight, DollarSign, UserCheck, Plus, Wrench } from 'lucide-react';
+import { Search, MapPin, Building, Phone, Calendar, ArrowUpRight, DollarSign, UserCheck, Plus, Wrench, Trash2, CheckSquare, Square, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface CustomersViewProps {
   customers: Customer[];
@@ -14,6 +14,7 @@ interface CustomersViewProps {
   salesRepsList: string[];
   onTransferCustomer?: (customerId: string, newRepName: string) => void;
   onDeleteCustomer?: (customerId: string) => void;
+  onBulkDeleteCustomers?: (ids: string[], deleteVisits: boolean) => Promise<void>;
 }
 
 export default function CustomersView({ 
@@ -22,12 +23,17 @@ export default function CustomersView({
   currentUser,
   salesRepsList,
   onTransferCustomer,
-  onDeleteCustomer
+  onDeleteCustomer,
+  onBulkDeleteCustomers
 }: CustomersViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProvince, setSelectedProvince] = useState('الكل');
   const [selectedStatus, setSelectedStatus] = useState('الكل');
   const [supportTasks, setSupportTasks] = useState<SupportTask[]>([]);
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState(false);
+  const [deleteAssociatedVisits, setDeleteAssociatedVisits] = useState(true);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   React.useEffect(() => {
     const token = localStorage.getItem('sales_visit_crm_auth_token');
@@ -174,6 +180,59 @@ export default function CustomersView({
         </div>
       </div>
 
+      {/* Admin Multi-Select Action Bar */}
+      {currentUser?.role === 'Admin' && filteredCustomers.length > 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 px-4 flex items-center justify-between flex-wrap gap-3" dir="rtl">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (selectedCustomerIds.length === filteredCustomers.length) {
+                  setSelectedCustomerIds([]);
+                } else {
+                  setSelectedCustomerIds(filteredCustomers.map(c => c.id));
+                }
+              }}
+              className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-purple-700 cursor-pointer"
+            >
+              {selectedCustomerIds.length === filteredCustomers.length && filteredCustomers.length > 0 ? (
+                <CheckSquare className="w-4 h-4 text-purple-600" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400" />
+              )}
+              <span>
+                {selectedCustomerIds.length === filteredCustomers.length && filteredCustomers.length > 0
+                  ? 'إلغاء تحديد الكل' 
+                  : `تحديد كافة العملاء المعروضين (${filteredCustomers.length})`}
+              </span>
+            </button>
+            
+            {selectedCustomerIds.length > 0 && (
+              <span className="text-xs bg-purple-100 text-purple-800 font-extrabold px-2.5 py-0.5 rounded-full">
+                تم تحديد {selectedCustomerIds.length} عميل
+              </span>
+            )}
+          </div>
+
+          {selectedCustomerIds.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedCustomerIds([])}
+                className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+              >
+                إلغاء التحديد
+              </button>
+              <button
+                onClick={() => setShowBulkConfirmModal(true)}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف العملاء المحددين ({selectedCustomerIds.length})</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Customer Cards Grid view */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" dir="rtl">
         {filteredCustomers.length === 0 ? (
@@ -184,14 +243,42 @@ export default function CustomersView({
           filteredCustomers.map((cust) => (
             <div 
               key={cust.id} 
-              className="bg-white border border-gray-100 rounded-2xl p-5 shadow-xs flex flex-col justify-between hover:border-blue-500/30 transition-all text-right space-y-4"
+              className={`bg-white border rounded-2xl p-5 shadow-xs flex flex-col justify-between hover:border-blue-500/30 transition-all text-right space-y-4 relative ${
+                selectedCustomerIds.includes(cust.id) ? 'border-purple-400 ring-2 ring-purple-400/20 bg-purple-50/15' : 'border-gray-100'
+              }`}
             >
+              {/* Checkbox for Admin selection */}
+              {currentUser?.role === 'Admin' && (
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <label className="flex items-center gap-2 cursor-pointer text-[10px] font-bold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={selectedCustomerIds.includes(cust.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedCustomerIds(prev => [...prev, cust.id]);
+                        } else {
+                          setSelectedCustomerIds(prev => prev.filter(id => id !== cust.id));
+                        }
+                      }}
+                      className="w-4 h-4 accent-purple-600 rounded cursor-pointer"
+                    />
+                    <span>تحديد للحذف</span>
+                  </label>
+                  <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md">
+                    {cust.id}
+                  </span>
+                </div>
+              )}
+
               {/* Header card segment */}
               <div className="space-y-1">
                 <div className="flex justify-between items-start gap-2">
-                  <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md shrink-0">
-                    {cust.id}
-                  </span>
+                  {currentUser?.role !== 'Admin' && (
+                    <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md shrink-0">
+                      {cust.id}
+                    </span>
+                  )}
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${getStatusStyle(cust.currentStatus)}`}>
                     {cust.currentStatus}
                   </span>
@@ -347,6 +434,88 @@ export default function CustomersView({
           ))
         )}
       </div>
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkConfirmModal && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-slate-100 shadow-2xl text-right animate-scaleUp space-y-4" dir="rtl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-rose-600">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <h3 className="text-sm font-black text-slate-900">تأكيد حذف العملاء المحددين</h3>
+              </div>
+              <button
+                onClick={() => !isBulkDeleting && setShowBulkConfirmModal(false)}
+                disabled={isBulkDeleting}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl space-y-1">
+              <p className="text-xs font-black text-rose-900">
+                أنت على وشك حذف ({selectedCustomerIds.length}) عميل بشكل نهائي.
+              </p>
+              <p className="text-[11px] text-rose-700 font-bold">
+                هذا الإجراء نهائي ولا يمكن التراجع عنه.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <input
+                type="checkbox"
+                checked={deleteAssociatedVisits}
+                onChange={(e) => setDeleteAssociatedVisits(e.target.checked)}
+                className="w-4 h-4 accent-rose-600 rounded cursor-pointer"
+              />
+              <span>حذف كافة الزيارات المرتبطة بهؤلاء العملاء أيضاً</span>
+            </label>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkConfirmModal(false)}
+                disabled={isBulkDeleting}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black cursor-pointer transition-all"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (onBulkDeleteCustomers) {
+                    setIsBulkDeleting(true);
+                    try {
+                      await onBulkDeleteCustomers(selectedCustomerIds, deleteAssociatedVisits);
+                      setSelectedCustomerIds([]);
+                      setShowBulkConfirmModal(false);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setIsBulkDeleting(false);
+                    }
+                  }
+                }}
+                disabled={isBulkDeleting}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 cursor-pointer transition-all flex items-center justify-center gap-2"
+              >
+                {isBulkDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>جاري الحذف...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>تأكيد الحذف ({selectedCustomerIds.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

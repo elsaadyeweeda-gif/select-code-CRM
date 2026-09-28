@@ -841,6 +841,77 @@ export async function deleteVisit(id: string): Promise<void> {
   }
 }
 
+export async function deleteAllVisits(): Promise<number> {
+  await seedInitialDatabaseIfEmpty();
+  if (isPostgres) {
+    const countRes = await sql`SELECT count(*)::int AS cnt FROM visits`;
+    const count = countRes[0]?.cnt || 0;
+    await sql`DELETE FROM visits`;
+    return count;
+  }
+
+  const snap = await getDocs(collection(db, 'visits'));
+  const docs = snap.docs;
+  const batchSize = 400;
+  for (let i = 0; i < docs.length; i += batchSize) {
+    const chunk = docs.slice(i, i + batchSize);
+    await Promise.all(chunk.map(d => deleteDoc(d.ref)));
+  }
+  return docs.length;
+}
+
+export async function deleteVisitsByIds(ids: string[]): Promise<number> {
+  if (!ids || ids.length === 0) return 0;
+  await seedInitialDatabaseIfEmpty();
+  if (isPostgres) {
+    await sql`DELETE FROM visits WHERE id = ANY(${ids})`;
+    return ids.length;
+  }
+
+  const batchSize = 400;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const chunk = ids.slice(i, i + batchSize);
+    await Promise.all(chunk.map(id => deleteDoc(doc(db, 'visits', id))));
+  }
+  return ids.length;
+}
+
+export async function deleteVisitsByFilter(filters: { 
+  repName?: string; 
+  fromDate?: string; 
+  toDate?: string; 
+  customerStatus?: string;
+  visitType?: string;
+}): Promise<number> {
+  const allVisits = await getVisits();
+  const toDelete = allVisits.filter(v => {
+    if (filters.repName && filters.repName !== 'الكل' && v.repName !== filters.repName) {
+      return false;
+    }
+    if (filters.customerStatus && filters.customerStatus !== 'الكل' && v.customerStatus !== filters.customerStatus) {
+      return false;
+    }
+    if (filters.visitType && filters.visitType !== 'الكل' && v.visitType !== filters.visitType) {
+      return false;
+    }
+    if (filters.fromDate) {
+      const vDate = (v.timestamp || '').split('T')[0];
+      if (vDate < filters.fromDate) return false;
+    }
+    if (filters.toDate) {
+      const vDate = (v.timestamp || '').split('T')[0];
+      if (vDate > filters.toDate) return false;
+    }
+    return true;
+  });
+
+  const ids = toDelete.map(v => v.id);
+  if (ids.length > 0) {
+    await deleteVisitsByIds(ids);
+  }
+  return ids.length;
+}
+
 // ---------------- CUSTOMERS OPERATIONS ----------------
 
 export async function getCustomers(): Promise<Customer[]> {
@@ -877,6 +948,93 @@ export async function deleteCustomer(id: string): Promise<void> {
   } else {
     await deleteDoc(doc(db, 'customers', id));
   }
+}
+
+export async function deleteAllCustomers(deleteAssociatedVisits: boolean = false): Promise<{ customersCount: number; visitsCount: number }> {
+  await seedInitialDatabaseIfEmpty();
+  let deletedVisitsCount = 0;
+  if (deleteAssociatedVisits) {
+    deletedVisitsCount = await deleteAllVisits();
+  }
+
+  if (isPostgres) {
+    const countRes = await sql`SELECT count(*)::int AS cnt FROM customers`;
+    const count = countRes[0]?.cnt || 0;
+    await sql`DELETE FROM customers`;
+    return { customersCount: count, visitsCount: deletedVisitsCount };
+  }
+
+  const snap = await getDocs(collection(db, 'customers'));
+  const docs = snap.docs;
+  const batchSize = 400;
+  for (let i = 0; i < docs.length; i += batchSize) {
+    const chunk = docs.slice(i, i + batchSize);
+    await Promise.all(chunk.map(d => deleteDoc(d.ref)));
+  }
+  return { customersCount: docs.length, visitsCount: deletedVisitsCount };
+}
+
+export async function deleteCustomersByIds(ids: string[], deleteAssociatedVisits: boolean = false): Promise<{ customersCount: number; visitsCount: number }> {
+  if (!ids || ids.length === 0) return { customersCount: 0, visitsCount: 0 };
+  await seedInitialDatabaseIfEmpty();
+
+  let deletedVisitsCount = 0;
+  if (deleteAssociatedVisits) {
+    const allCustomers = await getCustomers();
+    const targetCustomers = allCustomers.filter(c => ids.includes(c.id));
+    const targetNames = new Set(targetCustomers.map(c => (c.name || '').trim().toLowerCase()));
+
+    const allVisits = await getVisits();
+    const visitsToDelete = allVisits.filter(v => targetNames.has((v.customerName || '').trim().toLowerCase()));
+    if (visitsToDelete.length > 0) {
+      await deleteVisitsByIds(visitsToDelete.map(v => v.id));
+      deletedVisitsCount = visitsToDelete.length;
+    }
+  }
+
+  if (isPostgres) {
+    await sql`DELETE FROM customers WHERE id = ANY(${ids})`;
+    return { customersCount: ids.length, visitsCount: deletedVisitsCount };
+  }
+
+  const batchSize = 400;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const chunk = ids.slice(i, i + batchSize);
+    await Promise.all(chunk.map(id => deleteDoc(doc(db, 'customers', id))));
+  }
+  return { customersCount: ids.length, visitsCount: deletedVisitsCount };
+}
+
+export async function deleteCustomersByFilter(filters: {
+  repName?: string;
+  province?: string;
+  currentStatus?: string;
+}, deleteAssociatedVisits: boolean = false): Promise<{ customersCount: number; visitsCount: number }> {
+  const allCustomers = await getCustomers();
+  const toDelete = allCustomers.filter(c => {
+    if (filters.repName && filters.repName !== 'الكل' && c.repName !== filters.repName) {
+      return false;
+    }
+    if (filters.province && filters.province !== 'الكل' && c.province !== filters.province) {
+      return false;
+    }
+    if (filters.currentStatus && filters.currentStatus !== 'الكل' && c.currentStatus !== filters.currentStatus) {
+      return false;
+    }
+    return true;
+  });
+
+  const ids = toDelete.map(c => c.id);
+  if (ids.length > 0) {
+    return await deleteCustomersByIds(ids, deleteAssociatedVisits);
+  }
+  return { customersCount: 0, visitsCount: 0 };
+}
+
+export async function purgeAllCRMData(): Promise<{ customersCount: number; visitsCount: number }> {
+  const visitsCount = await deleteAllVisits();
+  const custRes = await deleteAllCustomers(false);
+  return { customersCount: custRes.customersCount, visitsCount };
 }
 
 export async function transferCustomers(
