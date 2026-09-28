@@ -442,7 +442,7 @@ export async function seedInitialDatabaseIfEmpty(): Promise<void> {
           `;
 
           // Seed Default Sales Reps
-          const defaultReps = ['حسام عيد', 'مهند', 'احمد زين', 'احمد محمود', 'عبد الرحمن مبروك', 'منار ابراهيم', 'سارة', 'نانسي', 'رنا', 'السعدي عويضة', 'رفيق حفني', 'أخرى'];
+          const defaultReps = ['حسام عيد', 'مهند', 'احمد زين', 'احمد محمود', 'عبد الرحمن مبروك', 'منار ابراهيم', 'سارة', 'نانسي', 'محمد بهاء', 'السعدي عويضة', 'رفيق حفني', 'أخرى'];
           await sql`
             INSERT INTO settings (key, data) 
             VALUES ('sales-reps-config', ${JSON.stringify({ list: defaultReps })})
@@ -782,7 +782,7 @@ export async function getSalesReps(): Promise<string[]> {
     }
   }
 
-  const defaultReps = ['حسام عيد', 'مهند', 'احمد زين', 'احمد محمود', 'عبد الرحمن مبروك', 'منار ابراهيم', 'سارة', 'نانسي', 'رنا', 'السعدي عويضة', 'رفيق حفني', 'أخرى'];
+  const defaultReps = ['حسام عيد', 'مهند', 'احمد زين', 'احمد محمود', 'عبد الرحمن مبروك', 'منار ابراهيم', 'سارة', 'نانسي', 'محمد بهاء', 'السعدي عويضة', 'رفيق حفني', 'أخرى'];
   await saveSalesReps(defaultReps);
   return defaultReps;
 }
@@ -1059,13 +1059,20 @@ export async function transferCustomers(
   }
 
   let updatedVisitsCount = 0;
-  if (updateVisits && targetCustomers.length > 0) {
+  if (updateVisits) {
     const allVisits = await getVisits();
-    const custNames = new Set(targetCustomers.map(c => (c.name || '').trim().toLowerCase()));
-    const visitsToUpdate = allVisits.filter(v =>
-      custNames.has((v.customerName || '').trim().toLowerCase()) &&
-      v.repName === sourceRepName
-    );
+    let visitsToUpdate: Visit[] = [];
+
+    if (customerIds && customerIds.length > 0) {
+      const custNames = new Set(targetCustomers.map(c => (c.name || '').trim().toLowerCase()));
+      visitsToUpdate = allVisits.filter(v =>
+        (v.repName === sourceRepName) &&
+        custNames.has((v.customerName || '').trim().toLowerCase())
+      );
+    } else {
+      // Transfer ALL visits belonging to sourceRepName
+      visitsToUpdate = allVisits.filter(v => (v.repName || '').trim() === sourceRepName.trim());
+    }
 
     for (const v of visitsToUpdate) {
       v.repName = targetRepName;

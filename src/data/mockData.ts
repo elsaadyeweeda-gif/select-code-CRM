@@ -15,7 +15,7 @@ export const INITIAL_SALES_REPS: SalesRep[] = [
   { id: 'REP-06', name: 'منار ابراهيم', email: 'manar@select-code.com', visitsCount: 4 },
   { id: 'REP-07', name: 'سارة', email: 'sara@select-code.com', visitsCount: 3 },
   { id: 'REP-08', name: 'نانسي', email: 'nancy@select-code.com', visitsCount: 2 },
-  { id: 'REP-09', name: 'رنا', email: 'rana@select-code.com', visitsCount: 0 }
+  { id: 'REP-09', name: 'محمد بهاء', email: 'bahaa@select-code.com', visitsCount: 31 }
 ];
 
 export const INITIAL_CUSTOMERS: Customer[] = [];
