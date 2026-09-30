@@ -18,6 +18,9 @@ import {
   hashPassword,
   generateSalt,
   getDatabaseEngineInfo,
+  getDatabaseDiagnostics,
+  syncFirestoreToPostgres,
+  syncPostgresToFirestore,
   getSalesReps,
   saveSalesReps,
   getVisits,
@@ -983,6 +986,17 @@ export async function createApp() {
     }
   });
 
+  // Get summary of orphaned customers and visits (reps deleted or unassigned)
+  app.get("/api/customers/orphaned-summary", authenticateToken, async (req: any, res: any) => {
+    try {
+      const summary = await getOrphanedSummary();
+      return res.json({ status: "success", summary });
+    } catch (err: any) {
+      console.error("Error fetching orphaned summary:", err);
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
   // ==================== SYSTEM SETTINGS API ====================
 
   app.get("/api/settings", authenticateToken, async (req: any, res: any) => {
@@ -1854,17 +1868,41 @@ export async function createApp() {
   });
 
   // Database status and diagnostics endpoint (useful for Vercel / GitHub deployments)
-  app.get("/api/db/status", (req, res) => {
+  app.get("/api/db/status", async (req, res) => {
     try {
-      const dbInfo = getDatabaseEngineInfo();
+      const diagnostics = await getDatabaseDiagnostics();
       res.json({
         status: "ok",
-        database: dbInfo,
+        database: diagnostics,
         serverless: !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME),
         environment: process.env.NODE_ENV || 'production'
       });
     } catch (err: any) {
       res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
+  // Admin DB Sync: Transfer from Firestore to PostgreSQL (Vercel)
+  app.post("/api/admin/db/sync-to-postgres", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    try {
+      const result = await syncFirestoreToPostgres();
+      await addLog(req.user.username, "db_sync_to_postgres", `مزامنة البيانات من Firestore إلى PostgreSQL: ${result.customersCount} عميل، ${result.visitsCount} زيارة، ${result.usersCount} حساب`);
+      return res.json({ status: "success", result });
+    } catch (err: any) {
+      console.error("Sync to postgres error:", err);
+      return res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
+  // Admin DB Sync: Transfer from PostgreSQL to Firestore
+  app.post("/api/admin/db/sync-to-firestore", authenticateToken, requireAdminRole, async (req: any, res: any) => {
+    try {
+      const result = await syncPostgresToFirestore();
+      await addLog(req.user.username, "db_sync_to_firestore", `مزامنة البيانات من PostgreSQL إلى Firestore: ${result.customersCount} عميل، ${result.visitsCount} زيارة`);
+      return res.json({ status: "success", result });
+    } catch (err: any) {
+      console.error("Sync to firestore error:", err);
+      return res.status(500).json({ status: "error", error: err.message });
     }
   });
 

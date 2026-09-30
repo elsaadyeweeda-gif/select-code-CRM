@@ -23,15 +23,32 @@ import {
 } from 'firebase/firestore';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 
-// Determine Database Engine (Supports Vercel Postgres, Neon, Supabase, or Firebase Firestore)
-const connectionString = (
-  process.env.DATABASE_URL || 
-  process.env.POSTGRES_URL || 
-  process.env.POSTGRES_URL_NON_POOLING || 
-  process.env.POSTGRES_PRISMA_URL || 
-  process.env.NEON_DATABASE_URL || 
-  ''
-).trim();
+// Resolution of PostgreSQL connection string with full support for Vercel Storage / Neon / Supabase
+export function resolvePostgresUrl(): string {
+  let url = (
+    process.env.DATABASE_URL || 
+    process.env.POSTGRES_URL || 
+    process.env.POSTGRES_PRISMA_URL || 
+    process.env.POSTGRES_URL_NON_POOLING || 
+    process.env.NEON_DATABASE_URL || 
+    process.env.SUPABASE_DATABASE_URL ||
+    ''
+  ).trim();
+
+  // If individual connection parameters are provided (e.g. from custom Vercel / RDS / Cloud SQL integrations)
+  if (!url && process.env.POSTGRES_HOST && process.env.POSTGRES_PASSWORD) {
+    const user = process.env.POSTGRES_USER || 'default';
+    const pass = encodeURIComponent(process.env.POSTGRES_PASSWORD);
+    const host = process.env.POSTGRES_HOST;
+    const port = process.env.POSTGRES_PORT || '5432';
+    const dbName = process.env.POSTGRES_DATABASE || 'verceldb';
+    url = `postgres://${user}:${pass}@${host}:${port}/${dbName}?sslmode=require`;
+  }
+
+  return url;
+}
+
+const connectionString = resolvePostgresUrl();
 
 let sql: any = null;
 if (connectionString) {
@@ -51,14 +68,14 @@ export const isPostgres = !!sql;
 
 // Resolution of Firebase Configuration (supports Vercel Environment Variables, GitHub Secrets, or local JSON)
 export const firebaseConfig = {
-  projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || rawFirebaseConfig.projectId,
-  appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || rawFirebaseConfig.appId,
-  apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || rawFirebaseConfig.apiKey,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || rawFirebaseConfig.authDomain,
-  firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || rawFirebaseConfig.firestoreDatabaseId || '(default)',
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || rawFirebaseConfig.storageBucket,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || rawFirebaseConfig.messagingSenderId,
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID || rawFirebaseConfig.measurementId || ""
+  projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || (rawFirebaseConfig && rawFirebaseConfig.projectId) || 'ai-studio-cf26c8fc-80c4-49c9-9b47-5ee3badc526a',
+  appId: process.env.FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID || (rawFirebaseConfig && rawFirebaseConfig.appId) || '',
+  apiKey: process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || (rawFirebaseConfig && rawFirebaseConfig.apiKey) || '',
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || (rawFirebaseConfig && rawFirebaseConfig.authDomain) || 'ai-studio-cf26c8fc-80c4-49c9-9b47-5ee3badc526a.firebaseapp.com',
+  firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || (rawFirebaseConfig && rawFirebaseConfig.firestoreDatabaseId) || '(default)',
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || (rawFirebaseConfig && rawFirebaseConfig.storageBucket) || '',
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || (rawFirebaseConfig && rawFirebaseConfig.messagingSenderId) || '',
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID || (rawFirebaseConfig && rawFirebaseConfig.measurementId) || ""
 };
 
 if (process.env.FIREBASE_CONFIG) {
@@ -304,7 +321,20 @@ export async function seedInitialDatabaseIfEmpty(): Promise<void> {
   dbInitPromise = (async () => {
     if (isPostgres && sql) {
       try {
-        // 1. Create Tables if they do not exist
+        // Fast probe: If users table already exists, mark initialized and return immediately to cut cold start
+        let tablesExist = false;
+        try {
+          const probe = await sql`SELECT id FROM users LIMIT 1`;
+          tablesExist = true;
+          if (probe.length > 0) {
+            dbInitialized = true;
+            return;
+          }
+        } catch (probeErr) {
+          tablesExist = false;
+        }
+
+        // 1. Create All Tables in a Single Multi-Statement Query for optimal Vercel serverless performance
         await sql`
           CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -318,16 +348,12 @@ export async function seedInitialDatabaseIfEmpty(): Promise<void> {
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS logs (
             id TEXT PRIMARY KEY,
             timestamp TIMESTAMPTZ DEFAULT NOW(),
@@ -335,72 +361,52 @@ export async function seedInitialDatabaseIfEmpty(): Promise<void> {
             action TEXT NOT NULL,
             details TEXT NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS customers (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS visits (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS support_tasks (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS support_notes (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS support_status_history (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS trial_installations (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS monitoring_records (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS monitoring_status_history (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS monitoring_rep_tasks (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
           );
-        `;
 
-        await sql`
           CREATE TABLE IF NOT EXISTS notifications (
             id TEXT PRIMARY KEY,
             data JSONB NOT NULL
@@ -439,6 +445,7 @@ export async function seedInitialDatabaseIfEmpty(): Promise<void> {
               ${defaultAdmin.createdAt}, 
               ${defaultAdmin.updatedAt}
             )
+            ON CONFLICT (id) DO NOTHING;
           `;
 
           // Seed Default Sales Reps
@@ -446,13 +453,14 @@ export async function seedInitialDatabaseIfEmpty(): Promise<void> {
           await sql`
             INSERT INTO settings (key, data) 
             VALUES ('sales-reps-config', ${JSON.stringify({ list: defaultReps })})
-            ON CONFLICT (key) DO NOTHING
+            ON CONFLICT (key) DO NOTHING;
           `;
 
           const initLogId = 'log-' + crypto.randomUUID();
           await sql`
             INSERT INTO logs (id, timestamp, username, action, details)
             VALUES (${initLogId}, NOW(), 'System', 'db_initialized', 'تم تهيئة قاعدة بيانات Neon PostgreSQL بنجاح مع حساب Elsaady')
+            ON CONFLICT (id) DO NOTHING;
           `;
         }
       } catch (err) {
@@ -498,6 +506,190 @@ export function getDatabaseEngineInfo() {
     postgresConfigured: !!connectionString,
     firestoreProjectId: firebaseConfig.projectId,
     firestoreDatabaseId: firebaseConfig.firestoreDatabaseId
+  };
+}
+
+export async function getDatabaseDiagnostics() {
+  const info = getDatabaseEngineInfo();
+  const counts = {
+    customers: 0,
+    visits: 0,
+    users: 0,
+    logs: 0
+  };
+
+  try {
+    if (isPostgres && sql) {
+      await seedInitialDatabaseIfEmpty();
+      const [cRes, vRes, uRes, lRes] = await Promise.all([
+        sql`SELECT count(*)::int AS cnt FROM customers`.catch(() => [{ cnt: 0 }]),
+        sql`SELECT count(*)::int AS cnt FROM visits`.catch(() => [{ cnt: 0 }]),
+        sql`SELECT count(*)::int AS cnt FROM users`.catch(() => [{ cnt: 0 }]),
+        sql`SELECT count(*)::int AS cnt FROM logs`.catch(() => [{ cnt: 0 }])
+      ]);
+      counts.customers = cRes[0]?.cnt || 0;
+      counts.visits = vRes[0]?.cnt || 0;
+      counts.users = uRes[0]?.cnt || 0;
+      counts.logs = lRes[0]?.cnt || 0;
+    } else if (db) {
+      const [cSnap, vSnap, uSnap, lSnap] = await Promise.all([
+        getDocs(collection(db, 'customers')).catch(() => ({ size: 0 })),
+        getDocs(collection(db, 'visits')).catch(() => ({ size: 0 })),
+        getDocs(collection(db, 'users')).catch(() => ({ size: 0 })),
+        getDocs(collection(db, 'logs')).catch(() => ({ size: 0 }))
+      ]);
+      counts.customers = (cSnap as any).size || 0;
+      counts.visits = (vSnap as any).size || 0;
+      counts.users = (uSnap as any).size || 0;
+      counts.logs = (lSnap as any).size || 0;
+    }
+  } catch (err) {
+    console.warn("Diagnostics count query error:", err);
+  }
+
+  return {
+    ...info,
+    counts,
+    timestamp: new Date().toISOString()
+  };
+}
+
+export async function syncFirestoreToPostgres(): Promise<{
+  customersCount: number;
+  visitsCount: number;
+  usersCount: number;
+  logsCount: number;
+}> {
+  if (!isPostgres || !sql) {
+    throw new Error('قاعدة بيانات PostgreSQL غير متصلة لإتمام المزامنة إليها');
+  }
+  if (!db) {
+    throw new Error('قاعدة بيانات Firebase Firestore غير متصلة لقراءة البيانات منها');
+  }
+
+  await seedInitialDatabaseIfEmpty();
+
+  const [customersSnap, visitsSnap, usersSnap, logsSnap, settingsSnap] = await Promise.all([
+    getDocs(collection(db, 'customers')),
+    getDocs(collection(db, 'visits')),
+    getDocs(collection(db, 'users')),
+    getDocs(collection(db, 'logs')),
+    getDoc(doc(db, 'settings', 'sales-reps-config'))
+  ]);
+
+  let usersCount = 0;
+  for (const d of usersSnap.docs) {
+    const u = d.data() as UserAccount;
+    await sql`
+      INSERT INTO users (id, username, password_hash, salt, role, assigned_reps, permissions, is_active, created_at, updated_at)
+      VALUES (
+        ${u.id}, ${u.username}, ${u.passwordHash}, ${u.salt}, ${u.role},
+        ${JSON.stringify(u.assignedReps || [])}, ${JSON.stringify(u.permissions || [])},
+        ${u.isActive}, ${u.createdAt || new Date().toISOString()}, ${u.updatedAt || new Date().toISOString()}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        role = EXCLUDED.role,
+        assigned_reps = EXCLUDED.assigned_reps,
+        permissions = EXCLUDED.permissions,
+        is_active = EXCLUDED.is_active,
+        updated_at = EXCLUDED.updated_at;
+    `;
+    usersCount++;
+  }
+
+  if (settingsSnap.exists()) {
+    await sql`
+      INSERT INTO settings (key, data)
+      VALUES ('sales-reps-config', ${JSON.stringify(settingsSnap.data())})
+      ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data;
+    `;
+  }
+
+  let customersCount = 0;
+  for (const d of customersSnap.docs) {
+    const c = d.data();
+    await sql`
+      INSERT INTO customers (id, data)
+      VALUES (${c.id}, ${JSON.stringify(c)})
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+    `;
+    customersCount++;
+  }
+
+  let visitsCount = 0;
+  for (const d of visitsSnap.docs) {
+    const v = d.data();
+    await sql`
+      INSERT INTO visits (id, data)
+      VALUES (${v.id}, ${JSON.stringify(v)})
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+    `;
+    visitsCount++;
+  }
+
+  let logsCount = 0;
+  for (const d of logsSnap.docs) {
+    const l = d.data() as ActivityLog;
+    await sql`
+      INSERT INTO logs (id, timestamp, username, action, details)
+      VALUES (${l.id}, ${l.timestamp || new Date().toISOString()}, ${l.username || 'System'}, ${l.action || 'Log'}, ${l.details || ''})
+      ON CONFLICT (id) DO NOTHING;
+    `;
+    logsCount++;
+  }
+
+  return { customersCount, visitsCount, usersCount, logsCount };
+}
+
+export async function syncPostgresToFirestore(): Promise<{
+  customersCount: number;
+  visitsCount: number;
+  usersCount: number;
+}> {
+  if (!isPostgres || !sql) {
+    throw new Error('قاعدة بيانات PostgreSQL غير متصلة لقراءة البيانات منها');
+  }
+  if (!db) {
+    throw new Error('قاعدة بيانات Firebase Firestore غير متصلة للكتابة إليها');
+  }
+
+  const [usersRows, custRows, visitRows, settingsRows] = await Promise.all([
+    sql`SELECT * FROM users`,
+    sql`SELECT data FROM customers`,
+    sql`SELECT data FROM visits`,
+    sql`SELECT data FROM settings WHERE key = 'sales-reps-config'`
+  ]);
+
+  for (const r of usersRows) {
+    const u: UserAccount = {
+      id: r.id,
+      username: r.username,
+      passwordHash: r.password_hash,
+      salt: r.salt,
+      role: r.role,
+      assignedReps: r.assigned_reps || [],
+      permissions: r.permissions || [],
+      isActive: r.is_active,
+      createdAt: new Date(r.created_at).toISOString(),
+      updatedAt: new Date(r.updated_at).toISOString()
+    };
+    await setDoc(doc(db, 'users', u.id), u);
+  }
+
+  if (settingsRows.length > 0 && settingsRows[0].data) {
+    await setDoc(doc(db, 'settings', 'sales-reps-config'), settingsRows[0].data);
+  }
+
+  const customersList = custRows.map((r: any) => r.data as Customer);
+  await saveCustomersBatch(customersList);
+
+  const visitsList = visitRows.map((r: any) => r.data as Visit);
+  await saveVisitsBatch(visitsList);
+
+  return {
+    usersCount: usersRows.length,
+    customersCount: custRows.length,
+    visitsCount: visitRows.length
   };
 }
 

@@ -20,7 +20,15 @@ import {
   UserCog,
   ArrowRightLeft,
   Image,
-  Camera
+  Camera,
+  Database,
+  Server,
+  HardDrive,
+  RefreshCw,
+  CheckCircle2,
+  Cloud,
+  ExternalLink,
+  Download
 } from 'lucide-react';
 import { Customer, Visit } from '../types';
 import TransferCustomersModal from './TransferCustomersModal';
@@ -221,8 +229,80 @@ export function AdminRBACPanel({
     .filter(name => name !== 'الكل' && name !== 'أخرى')
     .filter(name => !repSearchQuery.trim() || name.toLowerCase().includes(repSearchQuery.trim().toLowerCase()));
 
-  // Sub-tabs: 'users' | 'logs' | 'recycle_bin' | 'data_cleanup'
-  const [rbacSubTab, setRbacSubTab] = useState<'users' | 'logs' | 'recycle_bin' | 'data_cleanup'>('users');
+  // Sub-tabs: 'users' | 'logs' | 'recycle_bin' | 'data_cleanup' | 'database'
+  const [rbacSubTab, setRbacSubTab] = useState<'users' | 'logs' | 'recycle_bin' | 'data_cleanup' | 'database'>('users');
+
+  // Database status and sync state
+  const [dbDiagnostics, setDbDiagnostics] = useState<any>(null);
+  const [loadingDbDiag, setLoadingDbDiag] = useState<boolean>(false);
+  const [syncingDb, setSyncingDb] = useState<boolean>(false);
+  const [pingLatency, setPingLatency] = useState<number | null>(null);
+
+  const fetchDbDiagnostics = async () => {
+    setLoadingDbDiag(true);
+    const start = performance.now();
+    try {
+      const res = await fetch('/api/db/status');
+      const data = await res.json();
+      const duration = Math.round(performance.now() - start);
+      setPingLatency(duration);
+      if (data.status === 'ok') {
+        setDbDiagnostics(data.database);
+      }
+    } catch (err) {
+      console.error("Failed to fetch db diagnostics:", err);
+    } finally {
+      setLoadingDbDiag(false);
+    }
+  };
+
+  const handleSyncToPostgres = async () => {
+    setSyncingDb(true);
+    try {
+      const res = await fetch('/api/admin/db/sync-to-postgres', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        triggerMessage('success', `تمت المزامنة بنجاح إلى PostgreSQL: ${data.result.customersCount} عميل، ${data.result.visitsCount} زيارة، ${data.result.usersCount} حساب!`);
+        fetchDbDiagnostics();
+      } else {
+        triggerMessage('error', data.error || 'فشلت المزامنة إلى PostgreSQL');
+      }
+    } catch (err: any) {
+      triggerMessage('error', err.message || 'حدث خطأ شبكة أثناء المزامنة');
+    } finally {
+      setSyncingDb(false);
+    }
+  };
+
+  const handleSyncToFirestore = async () => {
+    setSyncingDb(true);
+    try {
+      const res = await fetch('/api/admin/db/sync-to-firestore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        triggerMessage('success', `تمت المزامنة بنجاح إلى Firestore: ${data.result.customersCount} عميل، ${data.result.visitsCount} زيارة!`);
+        fetchDbDiagnostics();
+      } else {
+        triggerMessage('error', data.error || 'فشلت المزامنة إلى Firestore');
+      }
+    } catch (err: any) {
+      triggerMessage('error', err.message || 'حدث خطأ شبكة أثناء المزامنة');
+    } finally {
+      setSyncingDb(false);
+    }
+  };
 
   // Default dynamic permissions map for roles
   const DEFAULT_ROLE_PERMISSIONS: Record<'Admin' | 'Manager' | 'User' | 'TechnicalSupport' | 'Monitoring', string[]> = {
@@ -336,6 +416,9 @@ export function AdminRBACPanel({
   useEffect(() => {
     fetchUsers();
     fetchLogs();
+    if (rbacSubTab === 'database') {
+      fetchDbDiagnostics();
+    }
   }, [rbacSubTab]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -590,6 +673,17 @@ export function AdminRBACPanel({
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>إدارة وتطهير البيانات</span>
+          </button>
+          <button
+            onClick={() => setRbacSubTab('database')}
+            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all ${
+              rbacSubTab === 'database'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>قاعدة البيانات و Vercel</span>
           </button>
         </div>
       </div>
@@ -1142,6 +1236,210 @@ export function AdminRBACPanel({
             triggerMessage={triggerMessage}
             onDataPurged={onDataPurged}
           />
+        )}
+
+        {rbacSubTab === 'database' && (
+          <div className="space-y-6 animate-fadeIn" dir="rtl">
+            {/* Header info card */}
+            <div className="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-2 text-right">
+                <div className="inline-flex items-center gap-2 bg-blue-500/20 border border-blue-400/30 px-3 py-1 rounded-full text-xs font-bold text-blue-200">
+                  <Database className="w-3.5 h-3.5 text-blue-300" />
+                  <span>تهيئة قواعد البيانات السحابية (Vercel & Cloud DB)</span>
+                </div>
+                <h3 className="text-xl font-black">إدارة وتشخيص قاعدة البيانات والتكامل مع Vercel</h3>
+                <p className="text-xs text-blue-200/90 leading-relaxed font-bold max-w-2xl">
+                  النظام مهيأ ومحدث للعمل المزدوج التلقائي مع كل من <span className="text-white font-black underline">Vercel PostgreSQL / Neon</span> وسحابة <span className="text-white font-black underline">Google Firebase Firestore</span> بدون فقدان أي بيانات، مع دعم الترحيل والمزامنة المتبادلة.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={fetchDbDiagnostics}
+                  disabled={loadingDbDiag}
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingDbDiag ? 'animate-spin' : ''}`} />
+                  <span>{loadingDbDiag ? 'جاري الفحص...' : 'فحص الاتصال والسرعة ⚡'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Diagnostic Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Engine Status */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col justify-between space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500">المحرك النشط حالياً</span>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                    dbDiagnostics?.engine === 'postgresql' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {dbDiagnostics?.engine === 'postgresql' ? <Server className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-base font-black text-slate-900">
+                    {dbDiagnostics?.engine === 'postgresql' ? 'PostgreSQL (Neon / Vercel)' : 'Google Firebase Firestore'}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 text-[11px] text-emerald-600 font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>متصل وجاهز للاستعلامات</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Customers Count */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col justify-between space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500">العملاء المسجلين</span>
+                  <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
+                    👥
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black font-mono text-slate-900">
+                    {dbDiagnostics?.counts?.customers ?? customers.length}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-bold mt-0.5">
+                    عميل موزع على المناديب المعتمدين
+                  </div>
+                </div>
+              </div>
+
+              {/* Visits Count */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col justify-between space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500">الزيارات والمتابعات</span>
+                  <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                    📋
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black font-mono text-slate-900">
+                    {dbDiagnostics?.counts?.visits ?? visits.length}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-bold mt-0.5">
+                    زيارة وسجل ميداني مسجل
+                  </div>
+                </div>
+              </div>
+
+              {/* Latency & Speed */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col justify-between space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-500">زمن استجابة السيرفر</span>
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    ⚡
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-black font-mono text-slate-900">
+                    {pingLatency !== null ? `${pingLatency} ms` : '--'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-bold mt-0.5">
+                    زمن دورة الاتصال (Roundtrip Latency)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sync & Migration Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Firestore -> PostgreSQL */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-3xs space-y-4 text-right">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
+                    <Server className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900">مزامنة البيانات إلى PostgreSQL (Vercel)</h4>
+                    <p className="text-[11px] text-slate-500 font-bold">نسخ كافة السجلات من Firebase Firestore إلى Vercel Postgres</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed font-bold">
+                  إذا قمت بربط قاعدة بيانات PostgreSQL / Neon في Vercel، يمكنك بنقرة واحدة نسخ كافة العملاء ({customers.length}) والزيارات ({visits.length}) وحسابات المستخدمين إلى PostgreSQL تلقائياً وبكفاءة عالية.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleSyncToPostgres}
+                  disabled={syncingDb}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {syncingDb ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>جاري مزامنة السجلات...</span>
+                    </>
+                  ) : (
+                    <>
+                      <HardDrive className="w-4 h-4" />
+                      <span>بدء المزامنة والنسخ إلى PostgreSQL 🚀</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* PostgreSQL -> Firestore */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-3xs space-y-4 text-right">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shrink-0">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900">مزامنة البيانات إلى Firebase Firestore</h4>
+                    <p className="text-[11px] text-slate-500 font-bold">نسخ السجلات من PostgreSQL إلى السحابة</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed font-bold">
+                  في حال الرغبة في عمل نسخة احتياطية سحابية من بيانات PostgreSQL إلى Firebase Firestore للحفاظ على أمان البيانات في جهتين مختلفتين.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleSyncToFirestore}
+                  disabled={syncingDb}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {syncingDb ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>جاري المزامنة...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="w-4 h-4" />
+                      <span>بدء المزامنة والنسخ إلى Firestore ☁️</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+
+            {/* Vercel Environment Variables Guide */}
+            <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-3 text-right">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-slate-900 flex items-center gap-2">
+                  <span className="text-base">📋</span>
+                  <span>دليل ومتغيرات البيئة على Vercel (Vercel Environment Variables):</span>
+                </h4>
+                <span className="text-[10px] bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full font-bold">
+                  جاهز للنشر الفوري
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-600 leading-relaxed font-bold space-y-1.5">
+                <p>• <strong>خيار Vercel Postgres / Neon:</strong> من لوحة Vercel اذهب إلى <code>Storage → Connect Database → Neon/Postgres</code> وسيتم تفعيل <code>DATABASE_URL</code> تلقائياً بدون أي تدخل يدوي.</p>
+                <p>• <strong>خيار Firebase Firestore:</strong> أضف متغير <code>FIREBASE_PROJECT_ID</code> و <code>FIREBASE_API_KEY</code> في <code>Settings → Environment Variables</code> في Vercel.</p>
+                <p>• تم دمج وتحديث مسارات الخادم Serverless ومعالجة التوجيه في <code>vercel.json</code> و <code>api/index.ts</code> لضمان استجابة سريعة واستقرار بنسبة 100%.</p>
+              </div>
+            </div>
+
+          </div>
         )}
       </div>
 

@@ -26,6 +26,7 @@ export type VisitSource = 'زيارة ميدانية' | 'بيانات عملاء
 
 export interface Visit {
   id: string;
+  customerId?: string; // معرف العميل المرتبط إن وجد
   timestamp: string; // تاريخ الزيارة / وقت الإدخال
   repId: string; // معرف المندوب
   repName: string; // اسم المندوب
